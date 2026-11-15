@@ -67,7 +67,8 @@ public final class PixelPropsUtils {
 
     private static final Set<String> finskyProps = Set.of(
         "FINGERPRINT",
-        VERSION_PREFIX + "SECURITY_PATCH"
+        VERSION_PREFIX + "SECURITY_PATCH",
+        VERSION_PREFIX + "DEVICE_INITIAL_SDK_INT"
     );
 
     private static volatile boolean sIsEnabled = false;
@@ -106,6 +107,7 @@ public final class PixelPropsUtils {
         final String cert_model = res.getString(R.string.cert_model);
         final String cert_spl = res.getString(R.string.cert_spl);
         final String cert_manufacturer = res.getString(R.string.cert_manufacturer);
+        final int cert_sdk = Integer.parseInt(res.getString(R.string.cert_sdk));
 
         Map<String, Object> tMap = new HashMap<>();
         String[] sections = cert_fp.split("/");
@@ -118,6 +120,7 @@ public final class PixelPropsUtils {
         tMap.put(VERSION_PREFIX + "RELEASE", sections[2].split(":")[1]);
         tMap.put(VERSION_PREFIX + "INCREMENTAL", sections[4].split(":")[0]);
         tMap.put(VERSION_PREFIX + "SECURITY_PATCH", cert_spl);
+        tMap.put(VERSION_PREFIX + "DEVICE_INITIAL_SDK_INT", cert_sdk);
         tMap.put("FINGERPRINT", cert_fp);
         // conditionally spoofing if different
         if (Build.IS_DEBUGGABLE)
@@ -178,9 +181,19 @@ public final class PixelPropsUtils {
                 field = Build.class.getDeclaredField(key);
             }
 
+            Object base = field.getDeclaringClass();
             field.setAccessible(true);
             long offset = OFFSET_FIELD.getInt(field);
-            UNSAFE.putObject(field.getDeclaringClass(), offset, value);
+            Class<?> type = field.getType();
+            if (!type.isPrimitive()) {
+                UNSAFE.putObject(base, offset, value);
+            } else if (type == int.class && value instanceof Number) {
+                UNSAFE.putInt(base, offset, ((Number) value).intValue());
+            } else if (type == boolean.class && value instanceof Boolean) {
+                UNSAFE.putBoolean(base, offset, (Boolean) value);
+            } else {
+                Logger.e("Unsupported type " + type.getName(), new IllegalStateException());
+            }
         } catch (Exception e) {
             Logger.e("Failed to set prop " + key, e);
         } finally {
